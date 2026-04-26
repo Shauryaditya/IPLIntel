@@ -1,0 +1,6 @@
+streamlit>=1.36
+torch>=2.2
+numpy>=1.26
+pandas>=1.4
+requests>=2.25
+python-dotenv>=1.0
