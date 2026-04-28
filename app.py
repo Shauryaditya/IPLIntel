@@ -3,13 +3,13 @@ from __future__ import annotations
 import streamlit as st
 
 from src.data_service import head_to_head, load_data, recent_form, season_table, team_summary, venue_results
+from src.live_service import get_fixtures
 from src.predictor import MatchFeatures, predict_match
-from src.live_service import get_fixtures, get_news_feed, get_news_article
 from src.stats_service import (
     batter_vs_bowler_stats,
+    batter_vs_pace_spin_stats,
     batter_yearly_stats,
     batters,
-    batter_vs_pace_spin_stats,
     bowler_yearly_stats,
     bowlers,
     top_batters,
@@ -37,63 +37,28 @@ st.title("IPL Match Predictor")
 
 if "selected_match" not in st.session_state:
     st.session_state.selected_match = None
-if "selected_news_id" not in st.session_state:
-    st.session_state.selected_news_id = None
 
-if st.session_state.selected_match is None and st.session_state.selected_news_id is None:
-    main_col, side_col = st.columns([0.65, 0.35], gap="large")
-    
-    with main_col:
-        st.subheader("📰 Trending News")
-        news_items = get_news_feed()
-        if not news_items:
-            st.info("No news available currently.")
-        else:
-            for n in news_items:
-                st.write(f"#### {n.headline}")
-                st.write(n.intro)
-                if st.button("Read Article", key=f"newsbtn_{n.id}"):
-                    st.session_state.selected_news_id = n.id
-                    st.rerun()
-                st.divider()
-                
-    with side_col:
-        st.subheader("🏏 Upcoming Fixtures")
-        fixtures = get_fixtures(tuple(bundle.teams))
-        if not fixtures:
-            st.info("No upcoming fixtures matching our historical dataset.")
-        else:
-            for f in fixtures:
-                with st.container(border=True):
-                    st.write(f"**{f.team_a} vs {f.team_b}**")
-                    st.caption(f"{f.match_desc} • {f.series_name}")
-                    if st.button("Analyze", key=f"btn_{f.id}", use_container_width=True):
-                        st.session_state.selected_match = {
-                            "team_a": f.team_a,
-                            "team_b": f.team_b,
-                            "venue": f.venue
-                        }
-                        st.rerun()
-
-    st.stop()
-
-if st.session_state.selected_news_id is not None:
-    if st.button("👈 Back to Dashboard"):
-        st.session_state.selected_news_id = None
-        st.rerun()
-        
-    article = get_news_article(st.session_state.selected_news_id)
-    if not article:
-        st.error("Failed to load news article.")
+if st.session_state.selected_match is None:
+    st.subheader("Upcoming Fixtures")
+    fixtures = get_fixtures(tuple(bundle.teams))
+    if not fixtures:
+        st.info("No fixtures matching our historical dataset.")
     else:
-        st.title(article.headline)
-        st.divider()
-        for p in article.content:
-            st.write(p)
-            
+        for f in fixtures:
+            with st.container(border=True):
+                st.write(f"**{f.team_a} vs {f.team_b}**")
+                st.caption(f"{f.date} at {f.time_ist} IST - {f.venue}")
+                if st.button("Analyze", key=f"btn_{f.id}", use_container_width=True):
+                    st.session_state.selected_match = {
+                        "team_a": f.team_a,
+                        "team_b": f.team_b,
+                        "venue": f.venue,
+                    }
+                    st.rerun()
+
     st.stop()
 
-if st.button("👈 Back to Dashboard"):
+if st.button("Back to Fixtures"):
     st.session_state.selected_match = None
     st.rerun()
 
@@ -107,11 +72,11 @@ with tabs[0]:
         sm = st.session_state.selected_match
         idx_a = bundle.teams.index(sm["team_a"]) if sm["team_a"] in bundle.teams else 0
         team_a = st.selectbox("Team A", bundle.teams, index=idx_a)
-        
+
         team_b_options = [team for team in bundle.teams if team != team_a]
         idx_b = team_b_options.index(sm["team_b"]) if sm["team_b"] in team_b_options else 0
         team_b = st.selectbox("Team B", team_b_options, index=idx_b)
-        
+
         venues_list = [""] + list(bundle.venues)
         best_idx = 0
         v_lower = sm["venue"].lower()
@@ -119,7 +84,7 @@ with tabs[0]:
             if v and (v.lower() in v_lower or v_lower in v.lower()):
                 best_idx = i
                 break
-                
+
         venue = st.selectbox("Venue", venues_list, index=best_idx)
         toss_winner = st.selectbox("Toss Winner", [""] + [team_a, team_b])
         toss_decision = st.radio("Toss Decision", ["bat", "field"], horizontal=True)
@@ -172,7 +137,12 @@ with tabs[1]:
     with metric_col:
         c1, c2, c3 = st.columns(3)
         c1.metric("Batter Runs", int(batter_stats["Runs"].sum()) if not batter_stats.empty else 0)
-        c2.metric("Batter Strike Rate", round(float(batter_stats["Runs"].sum() * 100 / batter_stats["Balls"].sum()), 2) if not batter_stats.empty and batter_stats["Balls"].sum() else 0)
+        c2.metric(
+            "Batter Strike Rate",
+            round(float(batter_stats["Runs"].sum() * 100 / batter_stats["Balls"].sum()), 2)
+            if not batter_stats.empty and batter_stats["Balls"].sum()
+            else 0,
+        )
         c3.metric("Bowler Wickets", int(bowler_stats["Wickets"].sum()) if not bowler_stats.empty else 0)
 
     chart_left, chart_right = st.columns(2, gap="large")
@@ -193,7 +163,7 @@ with tabs[1]:
             st.dataframe(bowler_stats, hide_index=True, use_container_width=True)
 
     st.divider()
-    
+
     st.write(f"{selected_batter} vs Pace and Spin")
     pace_spin_stats = batter_vs_pace_spin_stats(selected_batter)
     if pace_spin_stats.empty:
@@ -206,7 +176,7 @@ with tabs[1]:
         with ps_right:
             st.write("Strike Rate")
             st.bar_chart(pace_spin_stats.set_index("role")["Strike Rate"])
-            
+
     st.divider()
     top_left, top_right = st.columns(2, gap="large")
     with top_left:
